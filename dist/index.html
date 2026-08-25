@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="MirzoHub — startap g'oyasi bo'lib, jamoa yig'a olmayotganlar uchun platforma. Dasturchi toping, jamoa yig'ing, g'oyangizni amalga oshiring." />
+    <title>MirzoHub — Startap uchun jamoa top</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script>
+      // Sahifa render bo'lishidan OLDIN ishlaydi - shunda dark mode
+      // tanlangan foydalanuvchida oq fon "chaqnab" ko'rinmaydi (FOUC oldini olish).
+      (function () {
+        try {
+          var stored = localStorage.getItem('mirzohub-ui');
+          var theme = stored ? JSON.parse(stored).state.theme : null;
+          if (!theme) {
+            theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          if (theme === 'dark') document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-Bjg9Ir8d.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CUGnJN1V.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
