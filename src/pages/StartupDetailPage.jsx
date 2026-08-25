@@ -15,7 +15,10 @@ import {
 import api from '../lib/axios.js';
 import { useAuthStore } from '../store/authStore.js';
 import { categoryLabel } from '../constants/categories.js';
+import { ROLE_LABELS, ROLE_COLORS, getStartupRole, canManageMember } from '../constants/roles.js';
 import MatchingDevelopers from '../components/startup/MatchingDevelopers.jsx';
+import TaskManager from '../components/startup/TaskManager.jsx';
+import MeetingList from '../components/startup/MeetingList.jsx';
 import Loader from '../components/common/Loader.jsx';
 
 const StartupDetailPage = () => {
@@ -30,12 +33,16 @@ const StartupDetailPage = () => {
   const [joinMessage, setJoinMessage] = useState(''); // IXTIYORIY - yozish majburiy emas
   const [feedback, setFeedback] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actioningId, setActioningId] = useState(null);
 
   const loadStartup = useCallback(async () => {
     setIsLoading(true);
-    const { data } = await api.get(`/startups/${id}`);
-    setStartup(data);
-    setIsLoading(false);
+    try {
+      const { data } = await api.get(`/startups/${id}`);
+      setStartup(data);
+    } finally {
+      setIsLoading(false);
+    }
   }, [id]);
 
   useEffect(() => {
@@ -45,8 +52,43 @@ const StartupDetailPage = () => {
   if (isLoading) return <Loader />;
   if (!startup) return null;
 
-  const isOwner = currentUser?._id === startup.owner._id;
-  const alreadyMember = startup.teamMembers.some((m) => m.user._id === currentUser?._id);
+  const myRole = getStartupRole(startup, currentUser);
+
+  const handleChangeRole = async (userId, newRole) => {
+    setActioningId(userId);
+    try {
+      await api.patch(`/startups/${startup._id}/members/${userId}/role`, { role: newRole });
+      await loadStartup();
+      setFeedback({ type: 'green', text: 'Rol yangilandi' });
+    } catch (err) {
+      setFeedback({ type: 'red', text: err.response?.data?.message || 'Xatolik yuz berdi' });
+    } finally {
+      setActioningId(null);
+    }
+  };
+
+  const handleRemoveMember = async (userId) => {
+    const isSelf = userId === currentUser?._id;
+    const confirmText = isSelf
+      ? 'Rostdan ham bu startapdan chiqib ketmoqchimisiz?'
+      : "Rostdan ham bu a'zoni jamoadan chiqarmoqchimisiz?";
+    if (!confirm(confirmText)) return;
+
+    setActioningId(userId);
+    try {
+      await api.delete(`/startups/${startup._id}/members/${userId}`);
+      if (isSelf) {
+        navigate('/');
+        return;
+      }
+      await loadStartup();
+      setFeedback({ type: 'green', text: "A'zo jamoadan chiqarildi" });
+    } catch (err) {
+      setFeedback({ type: 'red', text: err.response?.data?.message || 'Xatolik yuz berdi' });
+    } finally {
+      setActioningId(null);
+    }
+  };
 
   const handleJoinRequest = async () => {
     setIsSubmitting(true);
@@ -91,25 +133,23 @@ const StartupDetailPage = () => {
           </div>
 
           <div className="flex shrink-0 gap-2">
-            {isOwner ? (
-              <>
-                <Link to={`/startups/${startup._id}/edit`}>
-                  <Button size="sm" variant="outlined">
-                    Tahrirlash
-                  </Button>
-                </Link>
-                <Button size="sm" color="red" variant="outlined" onClick={handleDelete}>
-                  O'chirish
+            {(myRole === 'owner' || myRole === 'admin') && (
+              <Link to={`/startups/${startup._id}/edit`}>
+                <Button size="sm" variant="outlined">
+                  Tahrirlash
                 </Button>
-              </>
-            ) : (
-              // "Qo'shilish" tugmasi HAR DOIM ko'rinadi - o'zi haqida yozish shart emas
-              isAuthenticated &&
-              !alreadyMember && (
-                <Button className="bg-bordo-600 text-white" onClick={() => setIsJoinOpen(true)}>
-                  Jamoaga qo'shilish
-                </Button>
-              )
+              </Link>
+            )}
+            {myRole === 'owner' && (
+              <Button size="sm" color="red" variant="outlined" onClick={handleDelete}>
+                O'chirish
+              </Button>
+            )}
+            {/* "Qo'shilish" tugmasi HAR DOIM ko'rinadi - o'zi haqida yozish shart emas */}
+            {!myRole && isAuthenticated && (
+              <Button className="bg-bordo-600 text-white" onClick={() => setIsJoinOpen(true)}>
+                Jamoaga qo'shilish
+              </Button>
             )}
           </div>
         </div>
@@ -143,29 +183,82 @@ const StartupDetailPage = () => {
         </div>
       )}
 
-      {/* Faqat startap egasiga ko'rinadigan, IXTIYORIY moslik filtri */}
-      {isOwner && <MatchingDevelopers requiredRoles={startup.requiredRoles} />}
+      {/* Faqat startap egasi/adminiga ko'rinadigan, IXTIYORIY moslik filtri */}
+      {(myRole === 'owner' || myRole === 'admin') && (
+        <MatchingDevelopers requiredRoles={startup.requiredRoles} />
+      )}
 
       <div className="rounded-xl border border-xaki-200 bg-white p-6 dark:border-siyoh-700 dark:bg-siyoh-800">
         <Typography variant="h6" className="mb-3 dark:text-white">
           Jamoa a'zolari ({startup.teamMembers.length})
         </Typography>
-        <div className="flex flex-wrap gap-3">
-          {startup.teamMembers.map((m) => (
-            <Link
-              key={m.user._id}
-              to={`/developers/${m.user._id}`}
-              className="flex items-center gap-2 rounded-full border border-xaki-200 py-1 pl-1 pr-3 hover:bg-xaki-50 dark:border-siyoh-700 dark:hover:bg-siyoh-700"
-            >
-              <Avatar
-                size="xs"
-                src={m.user.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${m.user.fullName}`}
-              />
-              <span className="text-sm text-siyoh-700 dark:text-xaki-100">{m.user.fullName}</span>
-            </Link>
-          ))}
+        <div className="flex flex-col gap-2">
+          {startup.teamMembers.map((m) => {
+            const isSelf = m.user._id === currentUser?._id;
+            const canManage = myRole ? canManageMember(myRole, m.role) : false;
+            const isActioning = actioningId === m.user._id;
+
+            return (
+              <div
+                key={m.user._id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-xaki-200 p-2 dark:border-siyoh-700"
+              >
+                <Link
+                  to={`/developers/${m.user._id}`}
+                  className="flex items-center gap-2 hover:underline"
+                >
+                  <Avatar
+                    size="xs"
+                    src={m.user.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${m.user.fullName}`}
+                  />
+                  <span className="text-sm text-siyoh-700 dark:text-xaki-100">{m.user.fullName}</span>
+                </Link>
+
+                <div className="flex items-center gap-2">
+                  <Chip size="sm" color={ROLE_COLORS[m.role]} value={ROLE_LABELS[m.role]} className="rounded-full" />
+
+                  {canManage && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="text"
+                        disabled={isActioning}
+                        onClick={() => handleChangeRole(m.user._id, m.role === 'admin' ? 'member' : 'admin')}
+                      >
+                        {m.role === 'admin' ? "A'zoga tushirish" : "Adminga ko'tarish"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="text"
+                        color="red"
+                        disabled={isActioning}
+                        onClick={() => handleRemoveMember(m.user._id)}
+                      >
+                        Chiqarish
+                      </Button>
+                    </>
+                  )}
+
+                  {isSelf && myRole !== 'owner' && (
+                    <Button
+                      size="sm"
+                      variant="text"
+                      color="red"
+                      disabled={isActioning}
+                      onClick={() => handleRemoveMember(m.user._id)}
+                    >
+                      Chiqib ketish
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
+
+      {myRole && <TaskManager startup={startup} myRole={myRole} currentUser={currentUser} />}
+      {myRole && <MeetingList startup={startup} myRole={myRole} />}
 
       <Dialog open={isJoinOpen} handler={() => setIsJoinOpen(false)} className="dark:bg-siyoh-800">
         <DialogHeader className="dark:text-white">Jamoaga qo'shilish so'rovi</DialogHeader>
