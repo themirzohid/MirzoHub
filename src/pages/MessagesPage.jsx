@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Typography } from '@material-tailwind/react';
+import { Typography, Button } from '@material-tailwind/react';
 import api from '../lib/axios.js';
 import { useChatStore } from '../store/chatStore.js';
 import ConversationList from '../components/chat/ConversationList.jsx';
@@ -14,11 +14,18 @@ const MessagesPage = () => {
 
   const [partner, setPartner] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   const loadConversations = useCallback(async () => {
     setIsLoading(true);
-    await fetchConversations();
-    setIsLoading(false);
+    setLoadError(null);
+    try {
+      await fetchConversations();
+    } catch (err) {
+      setLoadError(err.response?.data?.message || 'Suhbatlarni yuklab bo\'lmadi');
+    } finally {
+      setIsLoading(false);
+    }
   }, [fetchConversations]);
 
   useEffect(() => {
@@ -35,7 +42,10 @@ const MessagesPage = () => {
       setPartner(existing.user);
       return;
     }
-    api.get(`/users/${userId}`).then(({ data }) => setPartner(data));
+    api
+      .get(`/users/${userId}`)
+      .then(({ data }) => setPartner(data))
+      .catch(() => setPartner(null));
   }, [userId, conversations]);
 
   return (
@@ -54,6 +64,13 @@ const MessagesPage = () => {
         >
           {isLoading ? (
             <Loader label="Suhbatlar yuklanmoqda..." />
+          ) : loadError ? (
+            <div className="flex flex-col items-center gap-2 p-6 text-center text-sm text-siyoh-400 dark:text-xaki-400">
+              <p>{loadError}</p>
+              <Button size="sm" variant="text" onClick={loadConversations}>
+                Qayta urinish
+              </Button>
+            </div>
           ) : (
             <ConversationList
               conversations={conversations}
