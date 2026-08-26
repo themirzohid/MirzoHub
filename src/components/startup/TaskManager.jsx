@@ -24,26 +24,37 @@ const PRIORITY_COLORS = { low: 'blue-gray', medium: 'amber', urgent: 'red' };
 
 const emptyForm = { title: '', description: '', assignedTo: '', priority: 'medium', dueDate: '' };
 
-const TaskManager = ({ startup, myRole, currentUser }) => {
+const TaskManager = ({ startup, myPermission, currentUser }) => {
   const [tasks, setTasks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actioningId, setActioningId] = useState(null);
 
-  const canManage = myRole === 'owner' || myRole === 'admin';
+  const canManage = myPermission === 'owner' || myPermission === 'admin';
+  // owner backendda teamMembers ichida ham bor - takrorlanmasin
   const members = [
     { _id: startup.owner._id, fullName: startup.owner.fullName },
-    ...startup.teamMembers.map((m) => ({ _id: m.user._id, fullName: m.user.fullName })),
+    ...startup.teamMembers
+      .filter((m) => m.user._id !== startup.owner._id)
+      .map((m) => ({ _id: m.user._id, fullName: m.user.fullName })),
   ];
 
   const loadTasks = useCallback(async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
-      const { data } = await api.get(`/startups/${startup._id}/tasks`);
+      const { data } = await api.get('/tasks', { params: { startupId: startup._id } });
       setTasks(data);
+    } catch (err) {
+      setLoadError(
+        err.response?.status === 404
+          ? 'Vazifalar funksiyasi hali serverga ulanmagan'
+          : err.response?.data?.message || "Vazifalarni yuklab bo'lmadi"
+      );
     } finally {
       setIsLoading(false);
     }
@@ -73,8 +84,9 @@ const TaskManager = ({ startup, myRole, currentUser }) => {
     if (!form.title.trim()) return;
     setIsSubmitting(true);
     try {
-      await api.post(`/startups/${startup._id}/tasks`, {
+      await api.post('/tasks', {
         ...form,
+        startupId: startup._id,
         assignedTo: form.assignedTo || undefined,
         dueDate: form.dueDate || undefined,
       });
@@ -92,7 +104,7 @@ const TaskManager = ({ startup, myRole, currentUser }) => {
   const handleStatusChange = async (taskId, status) => {
     setActioningId(taskId);
     try {
-      await api.patch(`/startups/${startup._id}/tasks/${taskId}/status`, { status });
+      await api.patch(`/tasks/${taskId}/status`, { status });
       await loadTasks();
     } catch (err) {
       setFeedback({ type: 'red', text: err.response?.data?.message || 'Xatolik yuz berdi' });
@@ -105,7 +117,7 @@ const TaskManager = ({ startup, myRole, currentUser }) => {
     if (!confirm("Rostdan ham bu vazifani o'chirmoqchimisiz?")) return;
     setActioningId(taskId);
     try {
-      await api.delete(`/startups/${startup._id}/tasks/${taskId}`);
+      await api.delete(`/tasks/${taskId}`);
       await loadTasks();
     } catch (err) {
       setFeedback({ type: 'red', text: err.response?.data?.message || 'Xatolik yuz berdi' });
@@ -126,14 +138,16 @@ const TaskManager = ({ startup, myRole, currentUser }) => {
 
       <div className="mb-3 flex items-center justify-between">
         <p className="text-lg font-semibold dark:text-white">Vazifalar ({tasks.length})</p>
-        {canManage && (
+        {canManage && !loadError && (
           <Button size="sm" className="bg-bordo-600 text-white" onClick={() => setIsFormOpen(true)}>
             + Vazifa qo'shish
           </Button>
         )}
       </div>
 
-      {tasks.length === 0 ? (
+      {loadError ? (
+        <EmptyState title={loadError} description="Iltimos keyinroq qayta urinib ko'ring." />
+      ) : tasks.length === 0 ? (
         <EmptyState title="Hali vazifalar yo'q" />
       ) : (
         <div className="flex flex-col gap-2">

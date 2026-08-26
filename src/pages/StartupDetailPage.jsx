@@ -15,7 +15,7 @@ import {
 import api from '../lib/axios.js';
 import { useAuthStore } from '../store/authStore.js';
 import { categoryLabel } from '../constants/categories.js';
-import { ROLE_LABELS, ROLE_COLORS, getStartupRole, canManageMember } from '../constants/roles.js';
+import { PERMISSION_LABELS, PERMISSION_COLORS, getStartupPermission, canManageMember } from '../constants/roles.js';
 import MatchingDevelopers from '../components/startup/MatchingDevelopers.jsx';
 import TaskManager from '../components/startup/TaskManager.jsx';
 import MeetingList from '../components/startup/MeetingList.jsx';
@@ -52,14 +52,18 @@ const StartupDetailPage = () => {
   if (isLoading) return <Loader />;
   if (!startup) return null;
 
-  const myRole = getStartupRole(startup, currentUser);
+  const myPermission = getStartupPermission(startup, currentUser);
+  // owner backendda teamMembers ichida ham bor (default permission='member' bilan) -
+  // lekin bu yerda alohida ko'rsatilgani uchun ro'yxatdan chiqarib tashlaymiz,
+  // aks holda owner o'zini "boshqarish mumkin bo'lgan a'zo" sifatida ko'rar edi.
+  const manageableMembers = startup.teamMembers.filter((m) => m.user._id !== startup.owner._id);
 
-  const handleChangeRole = async (userId, newRole) => {
+  const handleChangePermission = async (userId, newPermission) => {
     setActioningId(userId);
     try {
-      await api.patch(`/startups/${startup._id}/members/${userId}/role`, { role: newRole });
+      await api.patch(`/startups/${startup._id}/members/${userId}/permission`, { permission: newPermission });
       await loadStartup();
-      setFeedback({ type: 'green', text: 'Rol yangilandi' });
+      setFeedback({ type: 'green', text: 'Ruxsat darajasi yangilandi' });
     } catch (err) {
       setFeedback({ type: 'red', text: err.response?.data?.message || 'Xatolik yuz berdi' });
     } finally {
@@ -133,20 +137,20 @@ const StartupDetailPage = () => {
           </div>
 
           <div className="flex shrink-0 gap-2">
-            {(myRole === 'owner' || myRole === 'admin') && (
+            {(myPermission === 'owner' || myPermission === 'admin') && (
               <Link to={`/startups/${startup._id}/edit`}>
                 <Button size="sm" variant="outlined">
                   Tahrirlash
                 </Button>
               </Link>
             )}
-            {myRole === 'owner' && (
+            {myPermission === 'owner' && (
               <Button size="sm" color="red" variant="outlined" onClick={handleDelete}>
                 O'chirish
               </Button>
             )}
             {/* "Qo'shilish" tugmasi HAR DOIM ko'rinadi - o'zi haqida yozish shart emas */}
-            {!myRole && isAuthenticated && (
+            {!myPermission && isAuthenticated && (
               <Button className="bg-bordo-600 text-white" onClick={() => setIsJoinOpen(true)}>
                 Jamoaga qo'shilish
               </Button>
@@ -184,18 +188,19 @@ const StartupDetailPage = () => {
       )}
 
       {/* Faqat startap egasi/adminiga ko'rinadigan, IXTIYORIY moslik filtri */}
-      {(myRole === 'owner' || myRole === 'admin') && (
+      {(myPermission === 'owner' || myPermission === 'admin') && (
         <MatchingDevelopers requiredRoles={startup.requiredRoles} />
       )}
 
       <div className="rounded-xl border border-xaki-200 bg-white p-6 dark:border-siyoh-700 dark:bg-siyoh-800">
         <Typography variant="h6" className="mb-3 dark:text-white">
-          Jamoa a'zolari ({startup.teamMembers.length})
+          Jamoa a'zolari ({manageableMembers.length})
         </Typography>
         <div className="flex flex-col gap-2">
-          {startup.teamMembers.map((m) => {
+          {manageableMembers.map((m) => {
             const isSelf = m.user._id === currentUser?._id;
-            const canManage = myRole ? canManageMember(myRole, m.role) : false;
+            const permission = m.permission || 'member';
+            const canManage = myPermission ? canManageMember(myPermission, permission) : false;
             const isActioning = actioningId === m.user._id;
 
             return (
@@ -211,11 +216,21 @@ const StartupDetailPage = () => {
                     size="xs"
                     src={m.user.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${m.user.fullName}`}
                   />
-                  <span className="text-sm text-siyoh-700 dark:text-xaki-100">{m.user.fullName}</span>
+                  <div className="leading-tight">
+                    <p className="text-sm text-siyoh-700 dark:text-xaki-100">{m.user.fullName}</p>
+                    {m.role && (
+                      <p className="text-xs text-siyoh-400 dark:text-xaki-400">{categoryLabel(m.role)}</p>
+                    )}
+                  </div>
                 </Link>
 
                 <div className="flex items-center gap-2">
-                  <Chip size="sm" color={ROLE_COLORS[m.role]} value={ROLE_LABELS[m.role]} className="rounded-full" />
+                  <Chip
+                    size="sm"
+                    color={PERMISSION_COLORS[permission]}
+                    value={PERMISSION_LABELS[permission]}
+                    className="rounded-full"
+                  />
 
                   {canManage && (
                     <>
@@ -223,9 +238,9 @@ const StartupDetailPage = () => {
                         size="sm"
                         variant="text"
                         disabled={isActioning}
-                        onClick={() => handleChangeRole(m.user._id, m.role === 'admin' ? 'member' : 'admin')}
+                        onClick={() => handleChangePermission(m.user._id, permission === 'admin' ? 'member' : 'admin')}
                       >
-                        {m.role === 'admin' ? "A'zoga tushirish" : "Adminga ko'tarish"}
+                        {permission === 'admin' ? "A'zoga tushirish" : "Adminga ko'tarish"}
                       </Button>
                       <Button
                         size="sm"
@@ -239,7 +254,7 @@ const StartupDetailPage = () => {
                     </>
                   )}
 
-                  {isSelf && myRole !== 'owner' && (
+                  {isSelf && myPermission !== 'owner' && (
                     <Button
                       size="sm"
                       variant="text"
@@ -257,8 +272,8 @@ const StartupDetailPage = () => {
         </div>
       </div>
 
-      {myRole && <TaskManager startup={startup} myRole={myRole} currentUser={currentUser} />}
-      {myRole && <MeetingList startup={startup} myRole={myRole} />}
+      {myPermission && <TaskManager startup={startup} myPermission={myPermission} currentUser={currentUser} />}
+      {myPermission && <MeetingList startup={startup} myPermission={myPermission} />}
 
       <Dialog open={isJoinOpen} handler={() => setIsJoinOpen(false)} className="dark:bg-siyoh-800">
         <DialogHeader className="dark:text-white">Jamoaga qo'shilish so'rovi</DialogHeader>

@@ -49,22 +49,30 @@ const Countdown = ({ target }) => {
   );
 };
 
-const MeetingList = ({ startup, myRole }) => {
+const MeetingList = ({ startup, myPermission }) => {
   const [meetings, setMeetings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actioningId, setActioningId] = useState(null);
 
-  const canManage = myRole === 'owner' || myRole === 'admin';
+  const canManage = myPermission === 'owner' || myPermission === 'admin';
 
   const loadMeetings = useCallback(async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const { data } = await api.get(`/startups/${startup._id}/meetings`);
       setMeetings(data);
+    } catch (err) {
+      setLoadError(
+        err.response?.status === 404
+          ? 'Uchrashuvlar funksiyasi hali serverga ulanmagan'
+          : err.response?.data?.message || "Uchrashuvlarni yuklab bo'lmadi"
+      );
     } finally {
       setIsLoading(false);
     }
@@ -131,14 +139,16 @@ const MeetingList = ({ startup, myRole }) => {
 
       <div className="mb-3 flex items-center justify-between">
         <p className="text-lg font-semibold dark:text-white">Uchrashuvlar ({meetings.length})</p>
-        {canManage && (
+        {canManage && !loadError && (
           <Button size="sm" className="bg-bordo-600 text-white" onClick={() => setIsFormOpen(true)}>
             + Uchrashuv rejalashtirish
           </Button>
         )}
       </div>
 
-      {upcoming.length === 0 ? (
+      {loadError ? (
+        <EmptyState title={loadError} description="Iltimos keyinroq qayta urinib ko'ring." />
+      ) : upcoming.length === 0 ? (
         <EmptyState title="Hali uchrashuvlar yo'q" />
       ) : (
         <div className="flex flex-col gap-2">
